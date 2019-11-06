@@ -65,9 +65,10 @@ def standardize_string(s, clean_words=True, lower=True, language="english"):
 
 def batched(iterable, size):
     sourceiter = iter(iterable)
-    while True:
-        batchiter = islice(sourceiter, size)
-        yield chain([next(batchiter)], batchiter)
+    batch = list(islice(sourceiter, size))
+    while batch:
+        yield batch
+        batch = list(islice(sourceiter, size))
 
 
 def _open(file_, mode='r'):
