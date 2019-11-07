@@ -11,7 +11,8 @@ from web.datasets.categorization import fetch_AP, fetch_battig, fetch_BLESS, fet
 from web.analogy import *
 import scipy
 from six import iteritems
-from web.embedding import Embedding
+import pandas as pd
+#from web.embedding import Embedding
 
 logger = logging.getLogger(__name__)
 
@@ -280,8 +281,9 @@ def evaluate_similarity(similarity, X, y):
 
     Parameters
     ----------
-    w : Embedding or dict
-      Embedding or dict instance.
+    similarity: Method to measure pairwise similarities.
+        Should take a (B x 2) matrix (X) of words and return a B vector of similarities.
+        The format is similarity(X[0], X[1]) ~ y.
 
     X: array, shape: (n_samples, 2)
       Word pairs
@@ -294,9 +296,102 @@ def evaluate_similarity(similarity, X, y):
     cor: float
       Spearman correlation
     """
-
     scores = similarity(X)
     return scipy.stats.spearmanr(scores, y).correlation
+
+
+def get_categorization_tasks():
+    return {
+        "AP": fetch_AP(),
+        "BLESS": fetch_BLESS(),
+        "Battig": fetch_battig(),
+        "ESSLI_2c": fetch_ESSLI_2c(),
+        "ESSLI_2b": fetch_ESSLI_2b(),
+        "ESSLI_1a": fetch_ESSLI_1a()
+    }
+
+
+def get_similarity_tasks():
+    return {
+        "MEN": fetch_MEN(),
+        "WS353": fetch_WS353(),
+        "WS353R": fetch_WS353(which="relatedness"),
+        "WS353S": fetch_WS353(which="similarity"),
+        "SimLex999": fetch_SimLex999(),
+        "RW": fetch_RW(),
+        "RG65": fetch_RG65(),
+        "MTurk": fetch_MTurk(),
+    }
+
+
+def get_analogy_tasks():
+    return {
+        "Google": fetch_google_analogy(),
+        "MSR": fetch_msr_analogy()
+    }
+
+
+def evaluate_tasks_with(tasks, method):
+    result = {}
+    for name, data in tasks.items():
+        result[name] = method(data.X, data.y)
+    return result
+
+
+def evaluate_with(analogy=None, similarity=None, mapping=None):
+    """
+    Parameters
+    ----------
+    analogy: Method to answer analogy queries.
+        Should take a (B x 3) matrix (X) of words and return a B vector of words (y).
+        The format of X is X[0] is to X[1] as X[2] is to y.
+        Analogy tests will be skipped if omitted. 
+
+    similarity: Method to measure pairwise similarities.
+        Should take a (B x 2) matrix (X) of words and return a B vector of similarities.
+        The format is similarity(X[0], X[1]) = y.
+        Similarity tests will be skipped if omitted.
+
+    mapping: Method to map words to representations.
+        Should take a B vector of words and return a (B x D) matrix of word representations.
+        Categorization tests will be skipped if omitted.
+    Returns
+    -------
+    results: pandas.DataFrame
+      DataFrame with results, one per column.
+    """
+
+    results = {}
+
+    if similarity:
+        logger.info("Calculating similarity benchmarks")
+        results['similarity'] = evaluate_tasks_with(
+            get_similarity_tasks(), 
+            lambda X, y: evaluate_similarity(similarity, X, y)
+        )
+
+    if analogy:
+        logger.info("Calculating analogy benchmarks")
+        results['analogy'] = evaluate_tasks_with(
+            get_analogy_tasks(), 
+            lambda X, y: evaluate_analogy(analogy, X, y)
+        )
+    
+    if mapping:
+        logger.info("Calculating categorization benchmarks")
+        results['categorization'] = evaluate_tasks_with(
+            get_categorization_tasks(),
+            lambda X, y: evaluate_categorization(mapping, X, y)
+        )
+
+    
+    flattened = {}
+    for task_category, task_results in results.items():
+        for task, res in task_results.items():
+            assert(task not in flattened)
+            flattened[task] = res
+
+    return pd.DataFrame([flattened])
 
 
 #def evaluate_on_all(w):
